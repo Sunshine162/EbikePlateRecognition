@@ -122,7 +122,7 @@ def plate_align(img, landmark):
     return cv2.warpPerspective(img, M, SPLIT_CONFIG['aligin_dsize'])
 
 
-def split_image(img, bboxes, keypoints, flags, dst_prefix):
+def split_image(img, bboxes, keypoints, scores, flags, dst_prefix):
     h, w, _ = img.shape
 
     if not flags:
@@ -251,7 +251,7 @@ def main():
         # draw_results(img, bboxes, keypoints, scores, save_path)
 
         dst_prefix = osp.join(args.output_dir, img_name.replace('.jpg', ''))
-        split_image(img, bboxes, keypoints, None, dst_prefix)
+        split_image(img, bboxes, keypoints, scores, None, dst_prefix)
 
 
 if __name__ == "__main__":
