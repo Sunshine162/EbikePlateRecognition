@@ -108,8 +108,8 @@ def draw_results(img, bboxes, keypoints, scores, save_path):
         for point, color in zip(four_points, colors):
             cv2.circle(img, point, radius, color, -1)
 
-        cv2.putText(img, f"{score.item()}:.2f",
-                    (bbox[[0], bbox[1] - 4]), 0, 1, (0, 0, 255), 2)
+        cv2.putText(img, f"{score.item():.2f}",
+                    (bbox[0], bbox[1] - 4), 0, 1, (0, 0, 255), 2)
 
     cv2.imwrite(save_path, img)
 
