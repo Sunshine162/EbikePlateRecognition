@@ -11,6 +11,21 @@ from utils.general import non_max_suppression_face
 from utils.torch_utils import select_device
 
 
+SPLIT_CONFIG = {
+    'aligin_pattern': [
+        [3, 3],
+        [197, 3],
+        [197, 97],
+        [3, 97],
+        [3, 42],
+        [197, 42],
+    ],
+    'aligin_dsize': (200, 100),
+    'p1': {'left': 50, 'right': 150, 'top': 6, 'bottom': 40},
+    'p2': {'left': 6, 'right': 194, 'top': 38, 'bottom': 92},
+}
+
+
 def preprocess(img, dsize=(640, 384), channel_first=False, out_int8=False):
     dst_w, dst_h = dsize
     h0, w0, _ = img.shape
@@ -87,16 +102,72 @@ def draw_results(img, bboxes, keypoints, scores, save_path):
 
     _bboxes = bboxes.round().astype(np.int64)
     _keypoints = keypoints.round().astype(np.int64)
-    for bbox, five_points, score in zip(_bboxes, _keypoints, scores):
+    for bbox, four_points, score in zip(_bboxes, _keypoints, scores):
         cv2.rectangle(img, bboxes[0:2], bbox[2:4], (0, 255, 0), thickness=2)
 
-        for point, color in zip(five_points, colors):
+        for point, color in zip(four_points, colors):
             cv2.circle(img, point, radius, color, -1)
 
         cv2.putText(img, f"{score.item()}:.2f",
                     (bbox[[0], bbox[1] - 4]), 0, 1, (0, 0, 255), 2)
 
     cv2.imwrite(save_path, img)
+
+
+def plate_align(img, landmark):
+    global SPLIT_CONFIG
+    landmark = landmark.astype(np.float32)
+    pattern = np.array(SPLIT_CONFIG['aligin_pattern'], np.float32)
+    M = cv2.getPerspectiveTransform(landmark[:4, :], pattern[:4, :])
+    return cv2.warpPerspective(img, M, SPLIT_CONFIG['aligin_dsize'])
+
+
+def split_image(img, bboxes, keypoints, flags dst_prefix):
+    h, w, _ = img.shape
+
+    if not flags:
+        flags = [True] * len(bboxes)
+
+    for i, (bbox, group_points, flag) in enumerate(zip(bboxes, keypoints, flags)):
+        bbox = np.array(bbox).round().astype(np.int64)
+        group_points = np.array(group_points).round().astype(np.int64)
+        # _dst_prefix = dst_prefix if flag else dst_prefix.replace('good', 'bad')
+
+        # crop plate
+        all_points = np.vstack([bbox, group_points])
+        l = np.clip(all_points[:, 0].min() - 10, 0, w)
+        t = np.clip(all_points[:, 1].min() - 10, 0, h)
+        r = np.clip(all_points[:, 0].max() + 10, 0, w)
+        b = np.clip(all_points[:, 1].max() + 10, 0, h)
+        plate_img = img[t:b, l:r, :]
+
+        # draw bbox and keypoints
+        thickness = max(2, round((r-l+b-t) / 200))
+        radius = max(3, round((r-l+b-t) / 200))
+        _plate_img = plate_img.copy()
+        _bbox = bbox - np.array([[l, t]])
+        cv2.rectangle(_plate_img, _bbox[0], _bbox[1], (0, 0, 255), thickness)
+        _group_points = group_points - np.array([[l, t]])
+        colors = [(0, 255, 255), (0, 75, 255), (255, 255, 0), (255, 0, 255)]
+        for j, point in enumerate(_group_points):
+            cv2.circle(_plate_img, point, radius, colors[j], -1)
+        cv2.imwrite(f"{_dst_prefix}-plate{i}.jpg", _plate_img)
+
+        # align plate
+        aligned_img = plate_align(plate_img, _group_points)
+        _aligned_img = aligned_img.copy()
+        cv2.line(_aligned_img, (0, 42), (200, 42), (0, 0, 255), 2)
+        cv2.imwrite(f"{_dst_prefix}-plate{i}-aligned.jpg", _aligned_img)
+
+        # crop city name and plate codes
+        global SPLIT_CONFIG
+        p1cfg, p2cfg = SPLIT_CONFIG['p1'], SPLIT_CONFIG['p2']
+        p1 = aligned_img[p1cfg['top']:p1cfg['bottom'], p1cfg['left']:p1cfg['right'], :]
+        p2 = aligned_img[p2cfg['top']:p2cfg['bottom'], p2cfg['left']:p2cfg['right'], :]
+        cv2.imwrite(f"{_dst_prefix}-plate{i}-p1.jpg", p1)
+        cv2.imwrite(f"{_dst_prefix}-plate{i}-p2.jpg", p2)
+        cv2.imwrite(f"{_dst_prefix}-plate{i}-p1s.jpg", cv2.resize(p1, (94, 24)))
+        cv2.imwrite(f"{_dst_prefix}-plate{i}-p2s.jpg", cv2.resize(p2, (94, 24)))
 
 
 class TorchInferencer:
@@ -135,8 +206,8 @@ class TFLiteInferencer:
 
     def infer(self, input_data):
         self.interpreter.set_tensor(input_name, input_data)
-        interpreter.invoke()
-        return interpreter.get_tensor(output_data)
+        self.interpreter.invoke()
+        return self.interpreter.get_tensor(output_data)
 
 
 def main():
@@ -166,9 +237,14 @@ def main():
 
     for i, img_name in enumerate(tqdm(os.listdir(args.input_dir))):
         img = cv2.imread(osp.join(args.input_dir, img_name))
+        
         input_data, info = preprocess(img, dsize=args.img_size, channel_first=channel_first)
         output_data = inferencer.infer(input_data)
         bboxes, keypoints, scores = postprocess(
             output_data, info, args.conf_thres, args.iou_thres)
+        
         save_path = osp.join(args.output_dir, img_name)
-        draw_results(img, bboxes, keypoints, scores, save_path)
+        # draw_results(img, bboxes, keypoints, scores, save_path)
+
+        dst_prefix = osp.join(args.output_dir, img_name.replace('.jpg', ''))
+        split_image(img, bboxes, keypoints, None, dst_prefix)
