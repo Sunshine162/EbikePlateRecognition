@@ -142,8 +142,8 @@ def split_image(img, bboxes, keypoints, scores, flags, dst_prefix):
         plate_img = img[t:b, l:r, :]
 
         # draw bbox, keypoints and score
-        thickness = max(2, round((r-l+b-t) / 200))
-        radius = max(3, round((r-l+b-t) / 200))
+        thickness = max(2, round(((r-l+b-t) / 200).item()))
+        radius = max(4, round(((r-l+b-t) / 200).item()))
         _plate_img = plate_img.copy()
         _bbox = bbox - np.array([[l, t]])
         cv2.rectangle(_plate_img, _bbox[0], _bbox[1], (0, 255, 0), thickness)
@@ -222,7 +222,7 @@ def main():
     parser.add_argument('--img-size', type=int, nargs=2, default=[640, 384], help="inference size")
     parser.add_argument('--input-dir', type=str, help="path to input images")
     parser.add_argument('--output-dir', type=str, help="path to save results")
-    parser.add_argument('--conf_thres', type=float, default=0.25, help="object confidence threshold")
+    parser.add_argument('--conf_thres', type=float, default=0.5, help="object confidence threshold")
     parser.add_argument('--iou_thres', type=float, default=0.6, help="IOU threshold for NMS")
     args = parser.parse_args()
 
