@@ -1,5 +1,5 @@
 import os
-import os.path.osp
+import os.path as osp
 
 import cv2
 import numpy as np
@@ -83,7 +83,7 @@ def postprocess(output_data, img_info, conf_thres, iou_thres):
         keypoints -= np.array([pl, pt])
         keypoints /= ratio
 
-        results.append((bboxes.cpu().numpy(), keypoints.cpu().numpy(), scores.cpu.numpy()))
+        results.append((bboxes.cpu().numpy(), keypoints.cpu().numpy(), scores.cpu().numpy()))
 
     return results
 
@@ -122,16 +122,16 @@ def plate_align(img, landmark):
     return cv2.warpPerspective(img, M, SPLIT_CONFIG['aligin_dsize'])
 
 
-def split_image(img, bboxes, keypoints, flags dst_prefix):
+def split_image(img, bboxes, keypoints, flags, dst_prefix):
     h, w, _ = img.shape
 
     if not flags:
         flags = [True] * len(bboxes)
 
-    for i, (bbox, group_points, flag) in enumerate(zip(bboxes, keypoints, flags)):
-        bbox = np.array(bbox).round().astype(np.int64)
+    for i, (bbox, group_points, score, flag) in enumerate(zip(bboxes, keypoints, scores, flags)):
+        bbox = np.array(bbox).round().astype(np.int64).reshape(2, 2)
         group_points = np.array(group_points).round().astype(np.int64)
-        # _dst_prefix = dst_prefix if flag else dst_prefix.replace('good', 'bad')
+        _dst_prefix = dst_prefix if flag else dst_prefix.replace('good', 'bad')
 
         # crop plate
         all_points = np.vstack([bbox, group_points])
@@ -141,16 +141,20 @@ def split_image(img, bboxes, keypoints, flags dst_prefix):
         b = np.clip(all_points[:, 1].max() + 10, 0, h)
         plate_img = img[t:b, l:r, :]
 
-        # draw bbox and keypoints
+        # draw bbox, keypoints and score
         thickness = max(2, round((r-l+b-t) / 200))
         radius = max(3, round((r-l+b-t) / 200))
         _plate_img = plate_img.copy()
         _bbox = bbox - np.array([[l, t]])
         cv2.rectangle(_plate_img, _bbox[0], _bbox[1], (0, 0, 255), thickness)
         _group_points = group_points - np.array([[l, t]])
-        colors = [(0, 255, 255), (0, 75, 255), (255, 255, 0), (255, 0, 255)]
+        colors = [(255, 0, 110), (255, 0, 238), (18, 0, 255), (0, 110, 255)]
         for j, point in enumerate(_group_points):
             cv2.circle(_plate_img, point, radius, colors[j], -1)
+        text = f"{score.item()}:.2f"
+        text_size = cv2.getTextSize(text, 0, 1, 2)
+        cv2.putText(img, text, (bbox[[0] + 5, bbox[1] + 5 + text_size[0][1]]), 0, 1, (0, 0, 255), 2)
+
         cv2.imwrite(f"{_dst_prefix}-plate{i}.jpg", _plate_img)
 
         # align plate
@@ -172,14 +176,14 @@ def split_image(img, bboxes, keypoints, flags dst_prefix):
 
 class TorchInferencer:
     def __init__(self, model_path):
-        device = torch.device('cpu')
-        self.model = attempt_load(model_path, map_location=device)
+        self.device = torch.device('cpu')
+        self.model = attempt_load(model_path, map_location=self.device)
 
     def infer(self, input_data):
-        input_data = torch.from_numpy(input_data).unsqueeze(0).to(device, non_blocking=True)
+        input_data = torch.from_numpy(input_data).unsqueeze(0).to(self.device, non_blocking=True)
         with torch.no_grad():
-            torch.from_numpy(input_data).unsqueeze(0).to(device, non_blocking=True)
             output_data, _ = self.model(input_data, augment=False)
+        return output_data
 
 
 class ONNXInferencer:
@@ -222,13 +226,13 @@ def main():
     args = parser.parse_args()
 
     if args.model_path.endswith(('.pt', '.pth')):
-        inferencer = TorchInferencer(model_path)
+        inferencer = TorchInferencer(args.model_path)
         channel_first = True
     elif args.model_path.endswith('.onnx'):
-        inferencer = ONNXInferencer(model_path)
+        inferencer = ONNXInferencer(args.model_path)
         channel_first = True
     elif args.model_path.endswith('.tflite'):
-        inferencer = TFLiteInferencer(model_path)
+        inferencer = TFLiteInferencer(args.model_path)
         channel_first = False
     else:
         raise RuntimeError('Unkown model type:', args.model_path.rsplit('.', 1)[-1])
@@ -241,10 +245,14 @@ def main():
         input_data, info = preprocess(img, dsize=args.img_size, channel_first=channel_first)
         output_data = inferencer.infer(input_data)
         bboxes, keypoints, scores = postprocess(
-            output_data, info, args.conf_thres, args.iou_thres)
+            output_data, info, args.conf_thres, args.iou_thres)[0]
         
         save_path = osp.join(args.output_dir, img_name)
         # draw_results(img, bboxes, keypoints, scores, save_path)
 
         dst_prefix = osp.join(args.output_dir, img_name.replace('.jpg', ''))
         split_image(img, bboxes, keypoints, None, dst_prefix)
+
+
+if __name__ == "__main__":
+    main()
