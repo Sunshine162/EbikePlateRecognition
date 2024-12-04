@@ -146,21 +146,22 @@ def split_image(img, bboxes, keypoints, scores, flags, dst_prefix):
         radius = max(3, round((r-l+b-t) / 200))
         _plate_img = plate_img.copy()
         _bbox = bbox - np.array([[l, t]])
-        cv2.rectangle(_plate_img, _bbox[0], _bbox[1], (0, 0, 255), thickness)
+        cv2.rectangle(_plate_img, _bbox[0], _bbox[1], (0, 255, 0), thickness)
         _group_points = group_points - np.array([[l, t]])
         colors = [(255, 0, 110), (255, 0, 238), (18, 0, 255), (0, 110, 255)]
         for j, point in enumerate(_group_points):
             cv2.circle(_plate_img, point, radius, colors[j], -1)
-        text = f"{score.item()}:.2f"
+        text = f"{score.item():.2f}"
         text_size = cv2.getTextSize(text, 0, 1, 2)
-        cv2.putText(img, text, (bbox[[0] + 5, bbox[1] + 5 + text_size[0][1]]), 0, 1, (0, 0, 255), 2)
+        cv2.putText(_plate_img, text, 
+            (_bbox[0, 0] + 5, _bbox[0, 1] + 5 + text_size[0][1]), 0, 1, (0, 0, 255), 2)
 
         cv2.imwrite(f"{_dst_prefix}-plate{i}.jpg", _plate_img)
 
         # align plate
         aligned_img = plate_align(plate_img, _group_points)
         _aligned_img = aligned_img.copy()
-        cv2.line(_aligned_img, (0, 42), (200, 42), (0, 0, 255), 2)
+        cv2.line(_aligned_img, (0, 42), (200, 42), (0, 255, 0), 2)
         cv2.imwrite(f"{_dst_prefix}-plate{i}-aligned.jpg", _aligned_img)
 
         # crop city name and plate codes
