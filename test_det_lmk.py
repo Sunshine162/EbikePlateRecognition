@@ -190,9 +190,9 @@ class TorchInferencer:
 class ONNXInferencer:
     def __init__(self, model_path):
         import onnxruntime as ort
-        self.session = ort.InferenceSession(args.model_path)
+        self.session = ort.InferenceSession(model_path)
         self.input_name = self.session.get_inputs()[0].name
-        self.output_names = [o.name for o in self.session.get_outputs]
+        self.output_names = [o.name for o in self.session.get_outputs()]
 
     def infer(self, input_data):
         return self.session.run(self.output_names, {self.input_name: input_data})[0]
@@ -210,9 +210,9 @@ class TFLiteInferencer:
         self.output_name = output_details[0]['index']
 
     def infer(self, input_data):
-        self.interpreter.set_tensor(input_name, input_data)
+        self.interpreter.set_tensor(self.input_name, input_data)
         self.interpreter.invoke()
-        return self.interpreter.get_tensor(output_data)
+        return self.interpreter.get_tensor(self.output_name)
 
 
 def main():

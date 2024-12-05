@@ -9,13 +9,53 @@ from tqdm import tqdm
 
 IMAGE_EXTENSIONS = ['jpeg', 'jpg', 'png', 'bmp', 'gif']
 
-CHARS = [
+CODE_CHARS = [
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 
     'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 
-    'W', 'X', 'Y', 'Z', '东', '中', '云', '佛', '关', '名', '圳', '头', '尾', '山', 
-    '州', '广', '庆', '惠', '揭', '梅', '汕', '江', '河', '浮', '海', '深', '清', 
-    '湛', '源', '潮', '珠', '肇', '茂', '莞', '远', '内', '阳', '韶', '-'
+    'W', 'X', 'Y', 'Z', '-'
 ]
+CITY_CHARS = [
+    '东', '中', '云', '佛', '关', '名', '圳', '头', '尾', '山', '州', '广', '庆', 
+    '惠', '揭', '梅', '汕', '江', '河', '浮', '海', '深', '清', '湛', '源', '潮', 
+    '珠', '肇', '茂', '莞', '远', '内', '阳', '韶', '-'
+]
+
+SPLIT_CONFIG = {
+    'aligin_pattern': [
+        [3, 3],
+        [197, 3],
+        [197, 97],
+        [3, 97],
+        [3, 42],
+        [197, 42],
+    ],
+    'aligin_dsize': (200, 100),
+    'p1': {'left': 50, 'right': 150, 'top': 6, 'bottom': 40},
+    'p2': {'left': 6, 'right': 194, 'top': 38, 'bottom': 92},
+}
+
+
+def plate_align(img, landmark):
+    h, w, _ = img.shape
+    landmark = np.array([[0, 0], [w-1, 0], [w-1, h-1], [0, h-1]], np.float32)
+
+    global SPLIT_CONFIG
+    pattern = np.array(SPLIT_CONFIG['aligin_pattern'], np.float32)
+
+    M = cv2.getPerspectiveTransform(landmark[:4, :], pattern[:4, :])
+    return cv2.warpPerspective(img, M, SPLIT_CONFIG['aligin_dsize'])
+
+
+def split_plate(plate_img, do_align=True):
+    if do_align:
+        plate_img = plate_align(plate_img, _group_points)
+
+    # crop city name and plate codes
+    global SPLIT_CONFIG
+    p1cfg, p2cfg = SPLIT_CONFIG['p1'], SPLIT_CONFIG['p2']
+    p1 = plate_img[p1cfg['top']:p1cfg['bottom'], p1cfg['left']:p1cfg['right'], :]
+    p2 = plate_img[p2cfg['top']:p2cfg['bottom'], p2cfg['left']:p2cfg['right'], :]
+    return p1, p2
 
 
 def preprocess(img, img_size=(640, 384), channel_first=False):
@@ -30,13 +70,13 @@ def preprocess(img, img_size=(640, 384), channel_first=False):
     img /= 128
 
     if channel_first:
-        img = img.transpose(img, (2, 0, 1))
+        img = img.transpose(2, 0, 1)
     img = img[None, ...]
 
     return img
 
 
-def postprocess(output_data):
+def postprocess(output_data, chars):
     results = []
 
     for preb in output_data:
@@ -48,19 +88,19 @@ def postprocess(output_data):
         code = ""
         scores = []
         pre_c = preb_label[0]
-        if pre_c != len(CHARS) - 1:
+        if pre_c != len(chars) - 1:
             no_repeat_blank_label.append(pre_c)
             scores.append(preb[pre_c, 0])
-            code += CHARS[pre_c]
+            code += chars[pre_c]
 
         for i, c in enumerate(preb_label):
-            if (pre_c == c) or (c == len(CHARS) - 1):
-                if c == len(CHARS) - 1:
+            if (pre_c == c) or (c == len(chars) - 1):
+                if c == len(chars) - 1:
                     pre_c = c
                 continue
             no_repeat_blank_label.append(c)
             scores.append(preb[c, i])
-            code += CHARS[c]
+            code += chars[c]
             pre_c = c
 
         results.append((code, scores))
@@ -68,9 +108,24 @@ def postprocess(output_data):
     return results
 
 
+def ocr_recognize(img, inferencer):
+    input_data = preprocess(
+        img, img_size=inferencer.img_size, channel_first=inferencer.channel_first)
+    output_data = inferencer.infer(input_data)
+    code, scores = postprocess(output_data, inferencer.chars)[0]
+    return code, scores
+
+
+def plate_recognize(img, p1_inferencer, p2_inferencer, do_align):
+    p1_img, p2_img = split_plate(img, do_align)
+    city, _ = ocr_recognize(p1_img, p1_inferencer)
+    code, _ = ocr_recognize(p2_img, p2_inferencer)
+    return city + code
+
+
 def get_inputs(inputs):
     if isinstance(inputs, list):
-        return [(x, None) for x in inputs if if osp.isfile(x)]
+        return [(x, None) for x in inputs if osp.isfile(x)]
 
     assert isinstance(inputs, str)
 
@@ -91,19 +146,46 @@ def get_inputs(inputs):
     raise RuntimeError("Can not get image files from:", inputs)
 
 
+def load_models(model_paths, img_size, char_lists=[], split=False):
+    global CODE_CHARS
+    global CITY_CHARS
+
+    default_chars = CODE_CHARS[:-1] + CITY_CHARS
+    if not char_lists:
+        char_lists = [default_chars] * len(model_paths)
+
+    inferencers = []
+    for model_path, chars in zip(model_paths, char_lists):
+        chars = chars if chars else default_chars
+        if model_path.endswith('.onnx'):
+            inferencers.append(ONNXInferencer(model_path, img_size, chars))
+        elif model_path.endswith('.tflite'):
+            inferencers.append(TFLiteInferencer(model_path, img_size, chars))
+        else:
+            raise RuntimeError('Unkown model type:', model_path.rsplit('.', 1)[-1])
+
+    if split and len(inferencers) == 1:
+        inferencers = inferencers * 2
+
+    return *inferencers
+
+
 class ONNXInferencer:
-    def __init__(self, model_path):
+    def __init__(self, model_path, img_size, chars):
         import onnxruntime as ort
-        self.session = ort.InferenceSession(args.model_path)
+        self.session = ort.InferenceSession(model_path)
         self.input_name = self.session.get_inputs()[0].name
-        self.output_names = [o.name for o in self.session.get_outputs]
+        self.output_names = [o.name for o in self.session.get_outputs()]
+        self.img_size = img_size
+        self.channel_first = True
+        self.chars = chars
 
     def infer(self, input_data):
         return self.session.run(self.output_names, {self.input_name: input_data})[0]
 
 
 class TFLiteInferencer:
-    def __init__(self, model_path):
+    def __init__(self, model_path, img_size, chars):
         import tensorflow as tf
         interpreter = tf.lite.Interpreter(model_path=model_path)
         interpreter.allocate_tensors()
@@ -112,17 +194,21 @@ class TFLiteInferencer:
         output_details = interpreter.get_output_details()
         self.input_name = input_details[0]['index']
         self.output_name = output_details[0]['index']
+        self.img_size = img_size
+        self.channel_first = False
+        self.chars = chars
 
     def infer(self, input_data):
-        self.interpreter.set_tensor(input_name, input_data)
+        self.interpreter.set_tensor(self.input_name, input_data)
         self.interpreter.invoke()
-        return self.interpreter.get_tensor(output_data)
+        output_data = self.interpreter.get_tensor(self.output_name)
+        return output_data.transpose(0, 2, 1)
 
 
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', type=str, help="path to model")
+    parser.add_argument('--models', type=str, help="paths to model")
     parser.add_argument('--img-size', type=int, nargs=2, default=[94, 24], help="inference size")
     parser.add_argument('--inputs', type=str, help="path to input images")
     parser.add_argument('--threshold', type=float, default=0.5, help="object confidence threshold")
@@ -130,21 +216,26 @@ def main():
     parser.add_argument('--split', action='store_true', help="split city name and plate code")
     args = parser.parse_args()
 
-    if args.model.endswith('.onnx'):
-        inferencer = ONNXInferencer(args.model)
-        channel_first = True
-    elif args.model.endswith('.tflite'):
-        inferencer = TFLiteInferencer(args.model)
-        channel_first = False
+    assert 1 <= len(args.models) <= 2, "quantity of models is invalid!"
+    if len(args.models) == 2:
+        assert args.split
+        split = True 
     else:
-        raise RuntimeError('Unkown model type:', args.model.rsplit('.', 1)[-1])
+        split = args.split
+
+    if split:
+        p1_inferencer, p2_inferencer = load_models(args.models, args.img_size, split=split)
+    else:
+        inferencer = load_models(args.models, args.img_size, split=split)
 
     inputs = get_inputs(args.inputs)
     cnt_total, cnt_right, print_acc = 0, 0, False
     for i, (img_path, label) in enumerate(inputs):
         img = cv2.imread(img_path)
-        input_data = preprocess(img, img_size=args.img_size, channel_first=channel_first)
-        output_data = inferencer.infer(input_data)
+        if split:
+            code = plate_recognize(img, p1_inferencer, p2_inferencer, args.align)
+        else:
+            code = ocr_recognize(img, inferencer)
         
         cnt_total += 1
         if label:
