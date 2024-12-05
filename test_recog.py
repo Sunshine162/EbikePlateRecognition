@@ -214,6 +214,7 @@ def main():
     parser.add_argument('--threshold', type=float, default=0.5, help="object confidence threshold")
     parser.add_argument('--align', action='store_true', help="align plate")
     parser.add_argument('--split', action='store_true', help="split city name and plate code")
+    parser.add_argument('--char-lists', type=str, nargs='+', help="split city name and plate code")
     args = parser.parse_args()
 
     assert 1 <= len(args.models) <= 2, "quantity of models is invalid!"
