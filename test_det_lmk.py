@@ -114,6 +114,25 @@ def draw_results(img, bboxes, keypoints, scores, save_path):
     cv2.imwrite(save_path, img)
 
 
+def save_results(img, keypoints, scores, flags, dst_prefix):
+    h, w, _ = img.shape
+
+    if not flags:
+        flags = [True] * len(bboxes)
+
+    for i, (group_points, score, flag) in enumerate(zip(keypoints, scores, flags)):
+        group_points = np.array(group_points).round().astype(np.int64)
+
+        # crop plate
+        all_points = np.vstack([bbox, group_points])
+        l = group_points[:, 0].min()
+        t = group_points[:, 0].max()
+        r = group_points[:, 1].min()
+        b = group_points[:, 1].max()
+        plate_img = img[t:b, l:r, :]
+        cv2.imwrite(f"{dst_prefix}-plate{i}.jpg", plate_img)
+
+
 def plate_align(img, landmark):
     global SPLIT_CONFIG
     landmark = landmark.astype(np.float32)
@@ -252,7 +271,8 @@ def main():
         # draw_results(img, bboxes, keypoints, scores, save_path)
 
         dst_prefix = osp.join(args.output_dir, img_name.replace('.jpg', ''))
-        split_image(img, bboxes, keypoints, scores, None, dst_prefix)
+        # split_image(img, bboxes, keypoints, scores, None, dst_prefix)
+        save_results( img, keypoints, scores, None, dst_prefix)
 
 
 if __name__ == "__main__":
