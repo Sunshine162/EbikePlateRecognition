@@ -129,7 +129,10 @@ def save_results(img, keypoints, scores, flags, dst_prefix):
         r = np.clip(group_points[:, 0].max(), 0, w)
         b = np.clip(group_points[:, 1].max(), 0, h)
         plate_img = img[t:b, l:r, :]
-        cv2.imwrite(f"{dst_prefix}-plate{i}.jpg", plate_img)
+        
+        group_points -= np.array([[l, t]])
+        aligned_img = plate_align(plate_img, group_points)
+        cv2.imwrite(f"{dst_prefix}-plate{i}.jpg", aligned_img)
 
 
 def plate_align(img, landmark):

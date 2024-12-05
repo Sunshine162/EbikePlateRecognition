@@ -167,7 +167,7 @@ def load_models(model_paths, img_size, char_lists=[], split=False):
     if split and len(inferencers) == 1:
         inferencers = inferencers * 2
 
-    return *inferencers
+    return inferencers
 
 
 class ONNXInferencer:
@@ -215,7 +215,7 @@ def main():
     parser.add_argument('--align', action='store_true', help="align plate")
     parser.add_argument('--split', action='store_true', help="split city name and plate code")
     parser.add_argument('--char-lists', type=str, nargs='+', help="split city name and plate code")
-    parser.add_argument('--outputs', type=str, , 
+    parser.add_argument('--outputs', type=str,
         default="images_with_prediction", help="path to save recogntion results")
     args = parser.parse_args()
 
@@ -232,6 +232,7 @@ def main():
         inferencer = load_models(args.models, args.img_size, split=split)[0]
 
     inputs = get_inputs(args.inputs)
+    inputs.sort()
     os.makedirs(args.outputs, exist_ok=True)
 
     cnt_total, cnt_right, print_acc = 0, 0, False
@@ -242,7 +243,7 @@ def main():
             p1_code, p2_code, p1_scores, p2_scores, p1_img, p2_img = \
                 plate_recognize(img, p1_inferencer, p2_inferencer, args.align)
             cv2.imwrite(osp.join(args.outputs, stem + f'-P1-{p1_code}.jpg'), p1_img)
-            cv2.imwrite(osp.join(args.outputs, stem + f'-P1-{p2_code}.jpg'), p2_img)
+            cv2.imwrite(osp.join(args.outputs, stem + f'-P2-{p2_code}.jpg'), p2_img)
             code = p1_code + p2_code
         else:
             code, scores = ocr_recognize(img, inferencer)
