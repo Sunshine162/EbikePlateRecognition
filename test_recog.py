@@ -118,9 +118,9 @@ def ocr_recognize(img, inferencer):
 
 def plate_recognize(img, p1_inferencer, p2_inferencer, do_align):
     p1_img, p2_img = split_plate(img, do_align)
-    city, _ = ocr_recognize(p1_img, p1_inferencer)
-    code, _ = ocr_recognize(p2_img, p2_inferencer)
-    return city + code
+    city, city_scores = ocr_recognize(p1_img, p1_inferencer)
+    code, code_scores = ocr_recognize(p2_img, p2_inferencer)
+    return city + code, city_scores + code_scores
 
 
 def get_inputs(inputs):
@@ -234,9 +234,9 @@ def main():
     for i, (img_path, label) in enumerate(inputs):
         img = cv2.imread(img_path)
         if split:
-            code = plate_recognize(img, p1_inferencer, p2_inferencer, args.align)
+            code, scores = plate_recognize(img, p1_inferencer, p2_inferencer, args.align)
         else:
-            code = ocr_recognize(img, inferencer)
+            code, scores = ocr_recognize(img, inferencer)
         
         cnt_total += 1
         if label:
