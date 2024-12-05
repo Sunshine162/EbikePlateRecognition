@@ -118,17 +118,16 @@ def save_results(img, keypoints, scores, flags, dst_prefix):
     h, w, _ = img.shape
 
     if not flags:
-        flags = [True] * len(bboxes)
+        flags = [True] * len(keypoints)
 
     for i, (group_points, score, flag) in enumerate(zip(keypoints, scores, flags)):
         group_points = np.array(group_points).round().astype(np.int64)
 
         # crop plate
-        all_points = np.vstack([bbox, group_points])
-        l = group_points[:, 0].min()
-        t = group_points[:, 0].max()
-        r = group_points[:, 1].min()
-        b = group_points[:, 1].max()
+        l = np.clip(group_points[:, 0].min(), 0, w)
+        t = np.clip(group_points[:, 1].min(), 0, h)
+        r = np.clip(group_points[:, 0].max(), 0, w)
+        b = np.clip(group_points[:, 1].max(), 0, h)
         plate_img = img[t:b, l:r, :]
         cv2.imwrite(f"{dst_prefix}-plate{i}.jpg", plate_img)
 

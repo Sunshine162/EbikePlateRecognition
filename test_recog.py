@@ -35,7 +35,7 @@ SPLIT_CONFIG = {
 }
 
 
-def plate_align(img, landmark):
+def plate_align(img):
     h, w, _ = img.shape
     landmark = np.array([[0, 0], [w-1, 0], [w-1, h-1], [0, h-1]], np.float32)
 
@@ -48,7 +48,7 @@ def plate_align(img, landmark):
 
 def split_plate(plate_img, do_align=True):
     if do_align:
-        plate_img = plate_align(plate_img, _group_points)
+        plate_img = plate_align(plate_img)
 
     # crop city name and plate codes
     global SPLIT_CONFIG
@@ -120,7 +120,7 @@ def plate_recognize(img, p1_inferencer, p2_inferencer, do_align):
     p1_img, p2_img = split_plate(img, do_align)
     city, city_scores = ocr_recognize(p1_img, p1_inferencer)
     code, code_scores = ocr_recognize(p2_img, p2_inferencer)
-    return city + code, city_scores + code_scores
+    return city, code, city_scores, code_scores, p1_img, p2_img
 
 
 def get_inputs(inputs):
@@ -215,6 +215,8 @@ def main():
     parser.add_argument('--align', action='store_true', help="align plate")
     parser.add_argument('--split', action='store_true', help="split city name and plate code")
     parser.add_argument('--char-lists', type=str, nargs='+', help="split city name and plate code")
+    parser.add_argument('--outputs', type=str, , 
+        default="images_with_prediction", help="path to save recogntion results")
     args = parser.parse_args()
 
     assert 1 <= len(args.models) <= 2, "quantity of models is invalid!"
@@ -230,11 +232,18 @@ def main():
         inferencer = load_models(args.models, args.img_size, split=split)[0]
 
     inputs = get_inputs(args.inputs)
+    os.makedirs(args.outputs, exist_ok=True)
+
     cnt_total, cnt_right, print_acc = 0, 0, False
     for i, (img_path, label) in enumerate(inputs):
+        stem = osp.basename(img_path).rsplit('.', 1)[0]
         img = cv2.imread(img_path)
         if split:
-            code, scores = plate_recognize(img, p1_inferencer, p2_inferencer, args.align)
+            p1_code, p2_code, p1_scores, p2_scores, p1_img, p2_img = \
+                plate_recognize(img, p1_inferencer, p2_inferencer, args.align)
+            cv2.imwrite(osp.join(args.outputs, stem + f'-P1-{p1_code}.jpg'), p1_img)
+            cv2.imwrite(osp.join(args.outputs, stem + f'-P1-{p2_code}.jpg'), p2_img)
+            code = p1_code + p2_code
         else:
             code, scores = ocr_recognize(img, inferencer)
         
