@@ -208,7 +208,7 @@ class TFLiteInferencer:
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--models', type=str, help="paths to model")
+    parser.add_argument('--models', type=str, nargs='+', help="paths to model")
     parser.add_argument('--img-size', type=int, nargs=2, default=[94, 24], help="inference size")
     parser.add_argument('--inputs', type=str, help="path to input images")
     parser.add_argument('--threshold', type=float, default=0.5, help="object confidence threshold")
@@ -227,7 +227,7 @@ def main():
     if split:
         p1_inferencer, p2_inferencer = load_models(args.models, args.img_size, split=split)
     else:
-        inferencer = load_models(args.models, args.img_size, split=split)
+        inferencer = load_models(args.models, args.img_size, split=split)[0]
 
     inputs = get_inputs(args.inputs)
     cnt_total, cnt_right, print_acc = 0, 0, False
