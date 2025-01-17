@@ -1,0 +1,30 @@
+detector:
+  model_path: "models/yolov5_plate_bs1_640x384_sim.onnx"
+  input_size: [640, 384]
+  norm:
+    mean: [0.0, 0.0, 0.0]
+    std: [255.0, 255.0, 255.0]
+  conf_threshold: 0.5
+  nms_threshold: 0.6
+  min_plate: 900
+  max_outputs: 30
+
+recognizer:
+  model_path: "models/plate_recog_bs2_112x32_sim.onnx"
+  input_size: [112, 32]
+  norm:
+    mean: [127.5, 127.5, 127.5]
+    std: [127.5, 127.5, 127.5]
+  align:
+    pattern: [[3, 3], [197, 3], [197, 97], [3, 97]]
+    dsize: [200, 100]
+  split:
+    p1_box: {'left': 50, 'right': 150, 'top': 6, 'bottom': 40}
+    p2_box: {'left': 6, 'right': 194, 'top': 38, 'bottom': 92}
+  city_names: ["广州", "深圳", "珠海", "汕头", "佛山", "韶关", "河源", "梅州", 
+               "惠州", "汕尾", "东莞", "中山", "江门", "阳江", "湛江", "茂名", 
+               "肇庆", "清远", "潮州", "揭阳", "云浮"]
+  city_chars: "东中云佛关名圳头尾山州广庆惠揭梅汕江河浮海深清湛源潮珠肇茂莞远门阳韶"
+  code_chars: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+  city_char_threshold: 0.8
+  code_char_threshold: 0.8
